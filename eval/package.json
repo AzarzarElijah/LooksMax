@@ -1,0 +1,20 @@
+{
+  "name": "looksmax-provider-eval",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "One-off Claude vs GPT-4V evaluation for the LooksMax analyze-scan pipeline (PROJECT_CONTEXT.md §17/§19 Phase 1 blocker). Not part of the shipped app.",
+  "scripts": {
+    "eval": "tsx src/run-eval.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "dotenv": "latest",
+    "openai": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

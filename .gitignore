@@ -1,0 +1,40 @@
+# This is a repo-wide safety net; each subproject (mobile/, dashboard/, supabase/, eval/, mvp/)
+# also has its own more specific .gitignore.
+
+# dependencies
+node_modules/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.p8
+*.jks
+*.mobileprovision
+.env.keys
+**/serviceAccountKey*.json
+**/*credentials*.json
+
+# build artifacts
+dist/
+build/
+out/
+.next/
+.expo/
+web-build/
+.vercel/
+*.tsbuildinfo
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
