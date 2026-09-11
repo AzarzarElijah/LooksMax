@@ -1,15 +1,18 @@
 // POST /analyze-scan — the Phase 1 walking-skeleton endpoint (§19).
 //
-// Client contract: the mobile app generates a scan id client-side, uploads the accepted photo
-// to Storage at `{userId}/{scanId}.jpg` (per the storage RLS policy in
-// supabase/migrations/20260906000200_storage.sql), then calls this function with that scanId.
-// This function derives the storage path itself from the caller's verified identity + the
-// scanId — it never trusts a client-supplied path.
+// Client contract (Part 4 safety fix, superseding the earlier "client uploads to Storage first"
+// design): the mobile app generates a scan id client-side and sends the accepted photo as base64
+// bytes in the request body itself. Nothing is written to Storage — or exists anywhere this
+// function's caller, or anyone else, could read — until AFTER a safe content-safety verdict AND
+// a successful analysis. This function derives the storage path itself from the caller's
+// verified identity + the scanId, and does the writing itself via its own service-role client —
+// it never trusts a client-supplied path, and the client no longer has (or needs) a Storage
+// insert policy for `scan-photos` (see supabase/migrations/20260908000100_close_client_storage_upload.sql).
 //
-// Body: { scanId: string (uuid), makeupOn: boolean, selectedStyleId?: string | null }
+// Body: { scanId: string (uuid), makeupOn: boolean, photoBase64: string, selectedStyleId?: string | null }
 
 import { createClient } from "npm:@supabase/supabase-js@2.115.0";
-import { encodeBase64 } from "jsr:@std/encoding@1/base64";
+import { decodeBase64 } from "jsr:@std/encoding@1/base64";
 import {
   runAnalysisPipeline,
   ContentSafetyRejectedError,
@@ -22,8 +25,14 @@ import { checkScanEligibility, type SubscriptionTier } from "../_shared/tier-gat
 interface AnalyzeScanRequest {
   scanId: string;
   makeupOn: boolean;
+  photoBase64: string;
   selectedStyleId?: string | null;
 }
+
+// Generous sanity ceiling, not a precisely-known platform request-size limit — a guided selfie
+// JPEG at capture.tsx's quality 0.85 should be well under this. Exists so an oversized/malformed
+// payload fails fast with a clear message instead of an opaque downstream error.
+const MAX_PHOTO_BASE64_LENGTH = 15_000_000; // ~11 MB decoded
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -32,7 +41,13 @@ function json(body: unknown, status = 200): Response {
 function isValidRequest(body: unknown): body is AnalyzeScanRequest {
   if (typeof body !== "object" || body === null) return false;
   const b = body as Record<string, unknown>;
-  return typeof b.scanId === "string" && b.scanId.length > 0 && typeof b.makeupOn === "boolean";
+  return (
+    typeof b.scanId === "string" &&
+    b.scanId.length > 0 &&
+    typeof b.makeupOn === "boolean" &&
+    typeof b.photoBase64 === "string" &&
+    b.photoBase64.length > 0
+  );
 }
 
 function startOfCurrentMonthUtc(): string {
@@ -72,7 +87,10 @@ Deno.serve(async (req) => {
     return json({ error: "Invalid JSON body" }, 400);
   }
   if (!isValidRequest(body)) {
-    return json({ error: "scanId (string) and makeupOn (boolean) are required" }, 400);
+    return json({ error: "scanId (string), makeupOn (boolean), and photoBase64 (string) are required" }, 400);
+  }
+  if (body.photoBase64.length > MAX_PHOTO_BASE64_LENGTH) {
+    return json({ error: "Photo is too large" }, 413);
   }
 
   // scans/scan_category_scores/recommendations/users have no client-side write policy — only
@@ -107,15 +125,11 @@ Deno.serve(async (req) => {
     return json({ error: "Monthly free scan limit reached", reason: eligibility.reason }, 402);
   }
 
-  const photoStoragePath = `${userId}/${body.scanId}.jpg`;
-  const { data: photoBlob, error: downloadError } = await db.storage.from("scan-photos").download(photoStoragePath);
-  if (downloadError || !photoBlob) return json({ error: "Photo not found in storage" }, 404);
-
-  const base64Jpeg = encodeBase64(await photoBlob.arrayBuffer());
-
+  // Nothing is written anywhere yet — the safety check inside runAnalysisPipeline runs against
+  // these in-memory bytes before anything is persisted, per Part 4's storage reorder.
   let pipelineResult: PipelineResult;
   try {
-    pipelineResult = await runAnalysisPipeline(base64Jpeg, body.makeupOn);
+    pipelineResult = await runAnalysisPipeline(body.photoBase64, body.makeupOn);
   } catch (err) {
     if (err instanceof ContentSafetyRejectedError) {
       return json({ error: "Photo failed content-safety check" }, 422);
@@ -125,6 +139,17 @@ Deno.serve(async (req) => {
     }
     console.error(err);
     return json({ error: "Unexpected error" }, 500);
+  }
+
+  // Only now — safety verdict was safe AND analysis succeeded — does the photo get written
+  // anywhere. Path is derived from the caller's verified identity, never trusted from the client.
+  const photoStoragePath = `${userId}/${body.scanId}.jpg`;
+  const { error: uploadError } = await db.storage
+    .from("scan-photos")
+    .upload(photoStoragePath, decodeBase64(body.photoBase64), { contentType: "image/jpeg", upsert: true });
+  if (uploadError) {
+    console.error(uploadError);
+    return json({ error: "Failed to save scan" }, 500);
   }
 
   const { error: insertScanError } = await db.from("scans").insert({
@@ -138,6 +163,12 @@ Deno.serve(async (req) => {
   });
   if (insertScanError) {
     console.error(insertScanError);
+    // The photo above uploaded successfully but has no `scans` row to reference it — clean it
+    // up rather than leave an orphaned photo in `scan-photos` with nothing pointing to it. Best
+    // effort: if the delete itself fails, log it but still report the original insert failure to
+    // the caller, since that's the actionable error here.
+    const { error: cleanupError } = await db.storage.from("scan-photos").remove([photoStoragePath]);
+    if (cleanupError) console.error("[analyze-scan] failed to clean up orphaned photo:", cleanupError);
     return json({ error: "Failed to save scan" }, 500);
   }
 

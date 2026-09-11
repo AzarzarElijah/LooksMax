@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { capPhotoResolution } from '@/lib/resize-photo';
 import { useScanStore } from '@/store/scan-store';
 
 // §13.1: live camera is the primary path, gallery upload is the fallback. Real-time on-device
@@ -25,7 +26,8 @@ export default function CaptureScreen() {
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.85 });
       if (photo?.uri) {
-        setPhoto(photo.uri);
+        const capped = await capPhotoResolution(photo);
+        setPhoto(capped.uri);
         router.push('/confirm');
       }
     } finally {
@@ -38,8 +40,10 @@ export default function CaptureScreen() {
     if (!permissionResult.granted) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
-    if (!result.canceled && result.assets[0]) {
-      setPhoto(result.assets[0].uri);
+    const asset = result.assets?.[0];
+    if (!result.canceled && asset) {
+      const capped = await capPhotoResolution(asset);
+      setPhoto(capped.uri);
       router.push('/confirm');
     }
   }

@@ -1,5 +1,5 @@
 import * as Crypto from 'expo-crypto';
-import { File } from 'expo-file-system';
+import * as LegacyFileSystem from 'expo-file-system/legacy';
 
 import { supabase } from './supabase';
 
@@ -25,8 +25,12 @@ export interface AnalyzeScanResult {
 }
 
 // Mirrors the analyze-scan Edge Function's contract (supabase/functions/analyze-scan/index.ts):
-// the client generates the scan id and uploads the photo itself, at the exact storage path the
-// storage RLS policy expects (`{userId}/{scanId}.jpg`), then hands the function only the id.
+// the client sends the photo as base64 bytes in the request body itself, rather than uploading
+// it to Storage first. The function runs the content-safety check on those bytes in memory and
+// only writes to Storage — via its own service-role client, at the path it derives itself —
+// after a safe verdict and a successful analysis. This is deliberate: nothing the client can read
+// (or that persists at all) exists until a safety verdict has actually been made. The client no
+// longer has (or needs) a Storage insert policy for `scan-photos`.
 export async function submitScan(photoUri: string, makeupOn: boolean): Promise<AnalyzeScanResult> {
   const {
     data: { session },
@@ -36,20 +40,10 @@ export async function submitScan(photoUri: string, makeupOn: boolean): Promise<A
   }
 
   const scanId = Crypto.randomUUID();
-  const storagePath = `${session.user.id}/${scanId}.jpg`;
-
-  const file = new File(photoUri);
-  const photoBytes = await file.arrayBuffer();
-
-  const { error: uploadError } = await supabase.storage
-    .from('scan-photos')
-    .upload(storagePath, photoBytes, { contentType: 'image/jpeg', upsert: true });
-  if (uploadError) {
-    throw new Error(`Photo upload failed: ${uploadError.message}`);
-  }
+  const photoBase64 = await LegacyFileSystem.readAsStringAsync(photoUri, { encoding: 'base64' });
 
   const { data, error: invokeError } = await supabase.functions.invoke('analyze-scan', {
-    body: { scanId, makeupOn },
+    body: { scanId, makeupOn, photoBase64 },
   });
   if (invokeError) {
     throw new Error(await describeFunctionError(invokeError));

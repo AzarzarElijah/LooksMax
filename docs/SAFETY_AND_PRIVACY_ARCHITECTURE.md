@@ -370,6 +370,29 @@ are not confirmed legal conclusions and should be revisited once counsel weighs 
   quarantine/no-promotion treatment as a confirmed hash match, pending human review — a
   conservative default chosen for architecture purposes, not a confirmed regulatory requirement.
 
+**CSAM vendor track status (2026-09-08):** a research pass (not counsel) surveyed the realistic
+vendor options and legal/app-store landscape — full findings and sourcing in the report this
+research pass produced. Summary folded into the two rows below: PhotoDNA is the strongest fit
+(free, aimed at smaller companies, case-by-case vetting with no published SLA); Thorn Safer is a
+real technical fit at a confirmed ~$30.7k/yr; Google CSAI Match is uncertain for a small startup;
+Hive AI is a faster-feeling but unpriced option; Cloudflare's CSAM tool is likely architecturally
+mismatched with this project's Supabase-backed storage. Applications to PhotoDNA and Hive are now
+in progress in parallel, since both are free to apply to and don't block anything else. This is
+now an **active, in-progress, months-long parallel track** (vendor-side vetting, not engineering
+effort, is the long pole), not just an open question — but the "does not block items 1-6" column
+below still holds: nothing about vendor selection blocks the vendor-independent architecture
+(§8 items 1-5) or the rest of the build plan. It gates §8 item 7 (real vendor integration) and,
+separately, wider testing (onboarding actual 13-17 users, any public beta) exactly as before —
+internal testing with vetted adults only is unaffected by this track's timeline.
+
+Also surfaced, and **not yet resolved** (needs counsel, not more research): whether this app's
+private, non-shared photo flow counts as "UGC" or "Social" under Google Play's Child Safety
+Standards policy and Apple's Guideline 1.2 — if either platform classifies it that way, their own
+CSAM-detection/moderation requirements become a contractual launch blocker independent of this
+app's own risk tolerance or the legal analysis below. Flagged as **higher-priority to resolve than
+the vendor question itself**, since it could gate app-store submission regardless of which vendor
+is chosen.
+
 **Lawyer-required questions** — genuinely open, tracked here rather than guessed at:
 
 | Decision | Why it matters | Required answer/source | Blocks implementation? |
@@ -379,8 +402,9 @@ are not confirmed legal conclusions and should be revisited once counsel weighs 
 | EU/UK minor profiling requirements | GDPR restricts profiling of children more tightly than adults in some contexts; §13.5's style/niche personalization and any recommendation ranking could qualify as profiling | Counsel review of GDPR Art. 22 / ICO guidance on children's data and automated decision-making/profiling, as applied to the `13_17` cohort specifically | Blocks finalizing `profilingAllowed` defaults in §1's policy config for `13_17` + EU/UK; does not block the architecture itself, which is designed to hold either answer |
 | Promotional/paid-placement recommendation restrictions for minors | Several jurisdictions restrict targeted/commercial content to minors more than to adults; §13.6's "Promoted" paid-placement tier may need to be suppressed or altered for the `13_17` cohort | Counsel review, likely combined with the profiling question above | Blocks finalizing `promotionalPlacementEligible` defaults for `13_17`; does not block the architecture |
 | Launch jurisdictions (final list) | Everything in §1's jurisdiction axis and §7's other rows is scoped by which jurisdictions actually launch — expanding beyond US + EU/UK changes the regime-lookup config, potentially non-trivially (e.g. entering a jurisdiction with its own biometric or minors law) | Business decision, informed by all the legal rows above | Blocks nothing in the architecture itself (designed to add jurisdictions as config), but blocks finalizing the regime-lookup table's actual contents |
-| CSAM vendor selection | §3's abstraction is vendor-agnostic by design, but no scanning can actually run without picking one | Vendor evaluation (features, sync vs. async model, hash-database coverage, jurisdictional availability) — a product/engineering evaluation, not purely legal, but often gated by legal review of the vendor's own terms | Blocks §8 item 7 (vendor integration) specifically; does not block items 1-6 |
-| Vendor pricing/approval | Even a technically-fitting vendor may require contract/procurement approval and budget sign-off | Business decision once a shortlist exists from the evaluation above | Blocks §8 item 7; does not block earlier items |
+| CSAM vendor selection | §3's abstraction is vendor-agnostic by design, but no scanning can actually run without picking one | Vendor evaluation (features, sync vs. async model, hash-database coverage, jurisdictional availability) — a product/engineering evaluation, not purely legal, but often gated by legal review of the vendor's own terms. **Status:** applications to PhotoDNA and Hive AI submitted 2026-09-08, pending vendor-side vetting (no published SLA, estimate 1-3 months); Thorn Safer and Google CSAI Match evaluated but not yet applied to | Blocks §8 item 7 (vendor integration) specifically; does not block items 1-6 |
+| Vendor pricing/approval | Even a technically-fitting vendor may require contract/procurement approval and budget sign-off | Business decision once a shortlist exists from the evaluation above. **Status:** PhotoDNA/Google are free if approved; Thorn Safer's one published tier is ~$30,720/yr (1M queries/mo) — a real budget decision if it becomes the fallback; Hive AI pricing is usage-based and unquoted | Blocks §8 item 7; does not block earlier items |
+| Google Play "Social"/Apple Guideline 1.2 applicability | Both platforms' own CSAM/moderation policies are contractual App Store requirements, separate from and potentially stricter than legal obligations — if either platform classifies this app's private, non-shared photo flow as in-scope UGC, their requirement becomes a launch blocker regardless of this app's own vendor/legal posture | Counsel review, and/or a direct determination from Google Play / Apple support, of how a private-per-user (not shared-with-other-users) photo-analysis flow is classified under each platform's current policy | Blocks nothing in the architecture itself, but is flagged as **higher priority to resolve than CSAM vendor selection**, since it could gate app-store submission independent of which vendor is chosen |
 | Reporting obligations (which authority, what trigger, what timeline) | §4's `reporting_required`/`reported` states are named but not mechanized — what actually has to happen legally on a confirmed match | Counsel review, per operating jurisdiction — e.g. NCMEC reporting obligations for US-facing services, and equivalent bodies for other launch jurisdictions | Blocks implementing any part of §4 beyond the state names; does not block §2/§3's quarantine and vendor-abstraction work, which is designed to route into §4 without needing to know its internals yet |
 | Retention/preservation requirements for compliance-hold material | §5 flags a direct tension between GDPR erasure rights and preservation duties on the same object — the actual retention duration and legal basis for preservation isn't decided | Counsel review, likely jurisdiction-specific | Blocks finalizing §5's compliance-hold retention row and §2's "user deletion request" hold-check exact behavior; does not block building the hold-check mechanism itself, which just needs to exist and default to "refuse" until told otherwise |
 
